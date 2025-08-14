@@ -1,76 +1,61 @@
 import streamlit as st
-import numpy as np
 import plotly.graph_objects as go
 import time
-from utils import generate_approach_profile
 
-st.set_page_config(page_title="IAC 2D Visual Analyzer", layout="wide")
+st.set_page_config(page_title="2D Aircraft Path Analyzer", layout="wide")
 
-st.title("🛬 IAC 2D Visual Analyzer")
-st.markdown("Visualize aircraft flying an instrument approach in 2D.")
+st.title("✈️ 2D Aircraft Path Analyzer & Visualizer")
 
-# Sidebar Inputs
-st.sidebar.header("Approach Details")
-runway = st.sidebar.text_input("Runway", "09")
-faf_distance = st.sidebar.number_input("FAF to Threshold (NM)", 5.0, 20.0, 6.0, step=0.1)
-faf_altitude = st.sidebar.number_input("FAF Altitude (ft)", 1000, 8000, 3000)
-threshold_altitude = st.sidebar.number_input("Threshold Elevation (ft)", 0, 2000, 200)
-mda = st.sidebar.number_input("MDA/DA (ft)", 0, 8000, 520)
-ground_speed = st.sidebar.number_input("Ground Speed (kt)", 60, 250, 120)
+# Sidebar inputs
+st.sidebar.header("Simulation Settings")
+num_frames = st.sidebar.slider("Number of Frames", 5, 100, 20)
+frame_delay = st.sidebar.slider("Frame Delay (seconds)", 0.05, 1.0, 0.2)
 
-sdf_points = st.sidebar.text_area("Step-Down Fixes (NM, Altitude ft)",
-                                  "4.0, 2200\n3.0, 1800")
+st.sidebar.header("Aircraft Path Parameters")
+start_alt = st.sidebar.number_input("Starting Altitude (ft)", 0, 50000, 5000)
+end_alt = st.sidebar.number_input("Ending Altitude (ft)", 0, 50000, 0)
+distance_nm = st.sidebar.number_input("Total Distance (NM)", 1, 500, 50)
 
-if st.sidebar.button("Run Simulation"):
-    sdf_data = []
-    for line in sdf_points.strip().split("\n"):
-        try:
-            nm, alt = line.split(",")
-            sdf_data.append((float(nm), float(alt)))
-        except:
-            pass
+# Generate simulation frames
+altitudes = []
+distances = []
+for i in range(num_frames):
+    fraction = i / (num_frames - 1)
+    altitude = start_alt + fraction * (end_alt - start_alt)
+    distance = fraction * distance_nm
+    altitudes.append(altitude)
+    distances.append(distance)
 
-    # Generate approach profile
-    distances, alts = generate_approach_profile(
-        faf_distance, faf_altitude, threshold_altitude, sdf_data
-    )
+simulation_frames = [{"x": distances[:i+1], "y": altitudes[:i+1]} for i in range(num_frames)]
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=distances, y=alts, mode="lines", name="Glide Path", line=dict(color="blue", width=2)))
-    fig.add_hline(y=mda, line_dash="dash", line_color="red", annotation_text="MDA/DA", annotation_position="top left")
+chart_placeholder = st.empty()
 
-    # Animate Aircraft
-    aircraft_marker = go.Scatter(
-        x=[distances[0]], y=[alts[0]], mode="markers", marker=dict(size=12, color="orange"), name="Aircraft"
-    )
-    fig.add_trace(aircraft_marker)
+# Simulate animation
+for frame_idx, frame_data in enumerate(simulation_frames):
+    frame_fig = go.Figure()
 
-    fig.update_layout(
-        xaxis_title="Distance to Threshold (NM)",
+    frame_fig.add_trace(go.Scatter(
+        x=frame_data["x"],  # X-axis: distance
+        y=frame_data["y"],  # Y-axis: altitude
+        mode='lines+markers',
+        line=dict(color='blue'),
+        marker=dict(size=6),
+        name="Aircraft Path"
+    ))
+
+    # Ensure altitude is displayed correctly (upward positive)
+    frame_fig.update_yaxes(autorange=True)
+
+    frame_fig.update_layout(
+        title=f"Aircraft Simulation Frame {frame_idx+1}/{num_frames}",
+        xaxis_title="Distance (NM)",
         yaxis_title="Altitude (ft)",
-        yaxis=dict(autorange="reversed"),  # invert altitude axis visually
-        title=f"Approach Profile - RWY {runway}",
-        height=500
+        template="plotly_dark"
     )
 
-    chart_placeholder = st.empty()
+    chart_placeholder.plotly_chart(frame_fig, use_container_width=True, key=f"frame_{frame_idx}")
 
-    # Animation loop
-    for i in range(len(distances)):
-        aircraft_marker = go.Scatter(
-            x=[distances[i]], y=[alts[i]], mode="markers", marker=dict(size=12, color="orange"), name="Aircraft"
-        )
-        frame_fig = go.Figure(data=[
-            go.Scatter(x=distances, y=alts, mode="lines", name="Glide Path", line=dict(color="blue", width=2)),
-            go.Scatter(x=[distances[i]], y=[alts[i]], mode="markers", marker=dict(size=12, color="orange"), name="Aircraft")
-        ])
-        frame_fig.add_hline(y=mda, line_dash="dash", line_color="red", annotation_text="MDA/DA", annotation_position="top left")
-        frame_fig.update_layout(
-            xaxis_title="Distance to Threshold (NM)",
-            yaxis_title="Altitude (ft)",
-            yaxis=dict(autorange="reversed"),
-            title=f"Approach Profile - RWY {runway}",
-            height=500
-        )
-        chart_placeholder.plotly_chart(frame_fig, use_container_width=True)
-        time.sleep(0.3)
+    time.sleep(frame_delay)
+
+st.success("Simulation complete ✅")
+
